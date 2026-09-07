@@ -2,7 +2,13 @@ import mongoose from 'mongoose';
 
 const materialSchema = new mongoose.Schema(
   {
-    key: { type: String, required: true, unique: true },
+    siteId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Site',
+      required: false,
+      index: true,
+    },
+    key: { type: String, required: true },
     group: {
       type: String,
       required: true,
@@ -17,5 +23,8 @@ const materialSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// key unique per site
+materialSchema.index({ siteId: 1, key: 1 }, { unique: true });
 
 export default mongoose.models.Material || mongoose.model('Material', materialSchema);

@@ -1,6 +1,6 @@
 import { connectDB } from '@/lib/db';
 import Product from '@/models/Product';
-import { requireAdmin } from '@/lib/auth';
+import { requireAdmin, resolveUserSite } from '@/lib/auth';
 import { saveFilesToGridFS, assertImageFile } from '@/lib/gridfs';
 
 export async function GET(request) {
@@ -10,7 +10,25 @@ export async function GET(request) {
     const category = searchParams.get('category');
     const featured = searchParams.get('featured');
 
-    const query = {};
+    // Auth → scope to user's site (admin without siteId sees all)
+    // No auth → only legacy products without siteId (tenant catalogs use /api/public/:slug/products)
+    const authHeader = request.headers.get('authorization') || '';
+    let query = {};
+
+    if (authHeader.startsWith('Bearer ')) {
+      const { siteId, errorResponse, decoded } = await resolveUserSite(request);
+      if (siteId) {
+        query.siteId = siteId;
+      } else if (decoded && (decoded.role === 'admin' || decoded.type === 'admin')) {
+        // admin sees all
+      } else if (decoded) {
+        return errorResponse || Response.json({ message: 'No store assigned' }, { status: 403 });
+      }
+    } else {
+      // Public default storefront: do not leak tenant-scoped products
+      query.$or = [{ siteId: null }, { siteId: { $exists: false } }];
+    }
+
     if (category) query.category = category;
     if (featured !== null && featured !== undefined) {
       query.isFeatured = featured === 'true';
@@ -36,6 +54,15 @@ export async function POST(request) {
 
   try {
     await connectDB();
+    const { siteId, errorResponse, decoded } = await resolveUserSite(request);
+    if (errorResponse) return errorResponse;
+    if (!siteId) {
+      return Response.json(
+        { message: 'No store assigned. Admin must create a site for this user first.' },
+        { status: 403 }
+      );
+    }
+
     const form = await request.formData();
 
     const get = (k) => form.get(k);
@@ -48,6 +75,7 @@ export async function POST(request) {
     }
 
     const product = await Product.create({
+      siteId,
       titleEn: get('titleEn'),
       titleAr: get('titleAr'),
       descriptionEn: get('descriptionEn') || '',

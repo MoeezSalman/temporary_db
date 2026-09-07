@@ -1,6 +1,6 @@
 import { connectDB } from '@/lib/db';
 import Material from '@/models/Material';
-import { requireAdmin } from '@/lib/auth';
+import { requireAdmin, resolveUserSite } from '@/lib/auth';
 import { saveFileToGridFS, assertImageFile } from '@/lib/gridfs';
 
 export async function GET(request) {
@@ -9,6 +9,17 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const query = {};
     if (searchParams.get('group')) query.group = searchParams.get('group');
+
+    const authHeader = request.headers.get('authorization') || '';
+    if (authHeader.startsWith('Bearer ')) {
+      const { siteId, errorResponse, decoded } = await resolveUserSite(request);
+      if (siteId) query.siteId = siteId;
+      else if (decoded && !(decoded.role === 'admin' || decoded.type === 'admin')) {
+        return errorResponse || Response.json({ message: 'No store assigned' }, { status: 403 });
+      }
+    } else {
+      query.$or = [{ siteId: null }, { siteId: { $exists: false } }];
+    }
 
     const materials = await Material.find(query)
       .sort({ group: 1, sortOrder: 1, createdAt: 1 })
@@ -28,6 +39,15 @@ export async function POST(request) {
 
   try {
     await connectDB();
+    const { siteId, errorResponse } = await resolveUserSite(request);
+    if (errorResponse) return errorResponse;
+    if (!siteId) {
+      return Response.json(
+        { message: 'No store assigned. Admin must create a site for this user first.' },
+        { status: 403 }
+      );
+    }
+
     const form = await request.formData();
     const get = (k) => form.get(k);
     const file = form.get('image');
@@ -40,6 +60,7 @@ export async function POST(request) {
 
     const sortOrder = get('sortOrder');
     const material = await Material.create({
+      siteId,
       key: get('key'),
       group: get('group'),
       nameEn: get('nameEn'),

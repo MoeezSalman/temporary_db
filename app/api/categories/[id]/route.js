@@ -1,6 +1,6 @@
 import { connectDB } from '@/lib/db';
 import Category from '@/models/Category';
-import { requireAdmin } from '@/lib/auth';
+import { requireAdmin, resolveUserSite } from '@/lib/auth';
 import { saveFileToGridFS, deleteFileFromGridFS, assertImageFile } from '@/lib/gridfs';
 
 export async function GET(_request, { params }) {
@@ -26,10 +26,18 @@ export async function PUT(request, { params }) {
 
   try {
     await connectDB();
+    const { siteId, errorResponse, decoded } = await resolveUserSite(request);
+    if (errorResponse) return errorResponse;
+
     const { id } = await params;
     const category = await Category.findById(id);
     if (!category) {
       return Response.json({ message: 'Category not found' }, { status: 404 });
+    }
+
+    const isAdmin = decoded.role === 'admin' || decoded.type === 'admin';
+    if (!isAdmin && siteId && String(category.siteId) !== String(siteId)) {
+      return Response.json({ message: 'Forbidden: category belongs to another store' }, { status: 403 });
     }
 
     const form = await request.formData();
@@ -64,11 +72,20 @@ export async function DELETE(request, { params }) {
 
   try {
     await connectDB();
+    const { siteId, errorResponse, decoded } = await resolveUserSite(request);
+    if (errorResponse) return errorResponse;
+
     const { id } = await params;
     const category = await Category.findById(id);
     if (!category) {
       return Response.json({ message: 'Category not found' }, { status: 404 });
     }
+
+    const isAdmin = decoded.role === 'admin' || decoded.type === 'admin';
+    if (!isAdmin && siteId && String(category.siteId) !== String(siteId)) {
+      return Response.json({ message: 'Forbidden: category belongs to another store' }, { status: 403 });
+    }
+
     if (category.imageId) await deleteFileFromGridFS(category.imageId);
     await category.deleteOne();
     return Response.json({ message: 'Category deleted' });

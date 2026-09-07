@@ -1,6 +1,6 @@
 import { connectDB } from '@/lib/db';
 import Material from '@/models/Material';
-import { requireAdmin } from '@/lib/auth';
+import { requireAdmin, resolveUserSite } from '@/lib/auth';
 import { saveFileToGridFS, deleteFileFromGridFS, assertImageFile } from '@/lib/gridfs';
 
 export async function GET(_request, { params }) {
@@ -26,10 +26,18 @@ export async function PUT(request, { params }) {
 
   try {
     await connectDB();
+    const { siteId, errorResponse, decoded } = await resolveUserSite(request);
+    if (errorResponse) return errorResponse;
+
     const { id } = await params;
     const material = await Material.findById(id);
     if (!material) {
       return Response.json({ message: 'Material not found' }, { status: 404 });
+    }
+
+    const isAdmin = decoded.role === 'admin' || decoded.type === 'admin';
+    if (!isAdmin && siteId && String(material.siteId) !== String(siteId)) {
+      return Response.json({ message: 'Forbidden: material belongs to another store' }, { status: 403 });
     }
 
     const form = await request.formData();
@@ -65,11 +73,20 @@ export async function DELETE(request, { params }) {
 
   try {
     await connectDB();
+    const { siteId, errorResponse, decoded } = await resolveUserSite(request);
+    if (errorResponse) return errorResponse;
+
     const { id } = await params;
     const material = await Material.findById(id);
     if (!material) {
       return Response.json({ message: 'Material not found' }, { status: 404 });
     }
+
+    const isAdmin = decoded.role === 'admin' || decoded.type === 'admin';
+    if (!isAdmin && siteId && String(material.siteId) !== String(siteId)) {
+      return Response.json({ message: 'Forbidden: material belongs to another store' }, { status: 403 });
+    }
+
     if (material.imageId) await deleteFileFromGridFS(material.imageId);
     await material.deleteOne();
     return Response.json({ message: 'Material deleted' });

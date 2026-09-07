@@ -1,6 +1,6 @@
 import { connectDB } from '@/lib/db';
 import Product from '@/models/Product';
-import { requireAdmin } from '@/lib/auth';
+import { requireAdmin, resolveUserSite } from '@/lib/auth';
 import { saveFilesToGridFS, deleteFileFromGridFS, assertImageFile } from '@/lib/gridfs';
 
 export async function GET(_request, { params }) {
@@ -30,10 +30,19 @@ export async function PUT(request, { params }) {
 
   try {
     await connectDB();
+    const { siteId, errorResponse, decoded } = await resolveUserSite(request);
+    if (errorResponse) return errorResponse;
+
     const { id } = await params;
     const product = await Product.findById(id);
     if (!product) {
       return Response.json({ message: 'Product not found' }, { status: 404 });
+    }
+
+    // Non-admin may only modify their own site's products
+    const isAdmin = decoded.role === 'admin' || decoded.type === 'admin';
+    if (!isAdmin && siteId && String(product.siteId) !== String(siteId)) {
+      return Response.json({ message: 'Forbidden: product belongs to another store' }, { status: 403 });
     }
 
     const form = await request.formData();
@@ -110,11 +119,20 @@ export async function DELETE(request, { params }) {
 
   try {
     await connectDB();
+    const { siteId, errorResponse, decoded } = await resolveUserSite(request);
+    if (errorResponse) return errorResponse;
+
     const { id } = await params;
     const product = await Product.findById(id);
     if (!product) {
       return Response.json({ message: 'Product not found' }, { status: 404 });
     }
+
+    const isAdmin = decoded.role === 'admin' || decoded.type === 'admin';
+    if (!isAdmin && siteId && String(product.siteId) !== String(siteId)) {
+      return Response.json({ message: 'Forbidden: product belongs to another store' }, { status: 403 });
+    }
+
     for (const imgId of product.imageIds || []) {
       await deleteFileFromGridFS(imgId);
     }

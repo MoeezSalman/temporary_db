@@ -17,6 +17,13 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ['admin', 'user'], default: 'user' },
     moduleAccess: { type: moduleAccessSchema, default: () => ({ material: true, product: true, categories: true }) },
     isActive: { type: Boolean, default: true },
+    // Multi-tenant: each store-owner user is linked to one Site
+    siteId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Site',
+      default: null,
+      index: true,
+    },
   },
   { timestamps: true }
 );

@@ -2,6 +2,12 @@ import mongoose from 'mongoose';
 
 const productSchema = new mongoose.Schema(
   {
+    siteId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Site',
+      required: false,
+      index: true,
+    },
     titleEn: { type: String, required: true },
     titleAr: { type: String, required: true },
     descriptionEn: { type: String, default: '' },
@@ -19,5 +25,7 @@ const productSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+productSchema.index({ siteId: 1, createdAt: -1 });
 
 export default mongoose.models.Product || mongoose.model('Product', productSchema);
